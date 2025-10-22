@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Minesweeper - Classic</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💣</text></svg>">
+<style>
+  :root{
+    --bg:black;
+    --board-bg:#c0c0c0;
+    --cell-size:24px;
+  }
+  html,body{height:100%;margin:0;background:var(--bg);font-family:Tahoma,Segoe UI,Arial,sans-serif;display:flex;align-items:center;justify-content:center;}
+  .frame{background:linear-gradient(#d7d7d7,#bfbfbf);padding:18px;border-radius:6px;box-shadow:0 10px 30px rgba(0,0,0,0.6);min-width:320px;}
+  .pomp{position:relative;height:48px;margin-bottom:-18px;text-align:center;}
+  .pomp img{height:68px;image-rendering:pixelated;display:inline-block;transform:translateY(-20%);}
+  .toolbar{display:flex;align-items:center;gap:8px;background:#cfcfcf;padding:6px;border:2px solid #7a7a7a;border-radius:4px;}
+  .led{background:#000;color:#ff2a2a;font-family:monospace;padding:4px 6px;border-radius:2px;min-width:48px;text-align:center;font-weight:700;}
+  .reset-btn{width:40px;height:36px;border:2px solid #7a7a7a;background:linear-gradient(#fff,#bdbdbd);display:flex;align-items:center;justify-content:center;border-radius:3px;cursor:pointer;}
+  .board-wrap{background:var(--board-bg);padding:10px;border:2px solid #7a7a7a;display:flex;justify-content:center;}
+  .board{display:grid;gap:0;background:linear-gradient(#cfcfcf,#d9d9d9);padding:4px;border:2px solid #7a7a7a;}
+  .cell{width:var(--cell-size);height:var(--cell-size);display:grid;place-items:center;background:linear-gradient(#e6e6e6,#bfbfbf);border-top:2px solid #fff;border-left:2px solid #fff;border-right:2px solid #7a7a7a;border-bottom:2px solid #7a7a7a;cursor:pointer;user-select:none;font-weight:700;font-size:14px;}
+  .cell.revealed{background:#dcdcdc;border:1px solid #7a7a7a;box-shadow:none;cursor:default;display:grid;place-items:center;}
+  .cell.revealed[data-num="1"]{color:#0000ff;}
+  .cell.revealed[data-num="2"]{color:#007a00;}
+  .cell.revealed[data-num="3"]{color:#ff0000;}
+  .cell.revealed[data-num="4"]{color:#000084;}
+  .cell.revealed[data-num="5"]{color:#7a0000;}
+  .cell.revealed[data-num="6"]{color:#008b8b;}
+  .cell.revealed[data-num="7"]{color:#000000;}
+  .cell.revealed[data-num="8"]{color:#808080;}
+  .flag svg, .mine svg{width:18px;height:18px;image-rendering:pixelated;}
+  .suspect{outline:2px solid rgba(255,0,0,0.65);box-shadow:0 0 0 2px rgba(255,0,0,0.15) inset; background: linear-gradient(90deg, rgba(255,0,0,0.08), rgba(255,0,0,0.02));}
+  .footer{margin-top:8px;font-size:12px;color:#333;text-align:center;}
+  @media (max-width:640px){ :root{--cell-size:20px;} .frame{padding:12px;} .pomp img{height:56px;} }
+</style>
+</head>
+<body>
+<div class="frame" role="application" aria-label="Minesweeper">
+  <div class="pomp"><img src="https://static.wikia.nocookie.net/sanrio/images/4/47/Pompompurin.png" alt="Pompompurin"></div>
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+    <div style="font-weight:700;font-size:18px;">Minesweeper</div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <div class="toolbar" style="align-items:center;">
+        <div id="mineCount" class="led" aria-live="polite">000</div>
+        <button id="reset" class="reset-btn" aria-label="Reset game" title="Reset game"></button>
+        <div id="timer" class="led" aria-live="polite">000</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="board-wrap">
+    <div class="board" id="board" role="grid" aria-label="Minesweeper board"></div>
+  </div>
+
+  <div class="footer">Left click to reveal. Right click to flag. Hold on a revealed number to highlight possible bombs.</div>
+</div>
+
+<!-- pixel SVG assets -->
+<svg id="svg-face-neutral" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" style="display:none">
+  <rect width="16" height="16" fill="#fadb6a"/>
+  <rect x="3" y="5" width="2" height="2" fill="#000"/>
+  <rect x="11" y="5" width="2" height="2" fill="#000"/>
+  <rect x="6" y="10" width="4" height="1" fill="#000"/>
+</svg>
+<svg id="svg-face-dead" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" style="display:none">
+  <rect width="16" height="16" fill="#fadb6a"/>
+  <rect x="3" y="5" width="2" height="2" fill="#000"/>
+  <rect x="11" y="5" width="2" height="2" fill="#000"/>
+  <rect x="6" y="10" width="1" height="1" fill="#000"/>
+  <rect x="9" y="11" width="1" height="1" fill="#000"/>
+</svg>
+<svg id="svg-face-win" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" style="display:none">
+  <rect width="16" height="16" fill="#fadb6a"/>
+  <rect x="3" y="5" width="2" height="2" fill="#000"/>
+  <rect x="11" y="5" width="2" height="2" fill="#000"/>
+  <rect x="6" y="10" width="4" height="1" fill="#000"/>
+  <rect x="5" y="8" width="6" height="1" fill="#000"/>
+</svg>
+<svg id="svg-flag" xmlns="http://www.w3.org/2000/svg" width="10" height="12" viewBox="0 0 10 12" style="display:none">
+  <rect width="2" height="12" x="0" y="0" fill="#5b4a27"/>
+  <rect x="2" y="1" width="6" height="4" fill="#d40000"/>
+  <rect x="2" y="5" width="6" height="2" fill="#a00000"/>
+</svg>
+<svg id="svg-mine" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12" style="display:none">
+  <rect width="12" height="12" fill="#000"/>
+  <rect x="3" y="3" width="6" height="6" fill="#ff4d4d"/>
+</svg>
+
+<script>
+(() => {
+  const boardEl = document.getElementById('board');
+  const resetBtn = document.getElementById('reset');
+  const mineCountEl = document.getElementById('mineCount');
+  const timerEl = document.getElementById('timer');
+
+  const faceNeutral = document.getElementById('svg-face-neutral').outerHTML;
+  const faceDead = document.getElementById('svg-face-dead').outerHTML;
+  const faceWin = document.getElementById('svg-face-win').outerHTML;
+  const flagSvg = document.getElementById('svg-flag').outerHTML;
+  const mineSvg = document.getElementById('svg-mine').outerHTML;
+
+  let config = {rows:9, cols:9, mines:10};
+  let grid = [];
+  let firstClick = true;
+  let interval = null;
+  let seconds = 0;
+  let remainingFlags = 0;
+  let gameOver = false;
+  let touchTimeout = null;
+  let highlightActive = false;
+
+  function applyConfig(){
+    clearInterval(interval); interval = null; seconds = 0; updateTimer();
+    firstClick = true; gameOver = false;
+    remainingFlags = config.mines; updateMineCount();
+    buildEmptyGrid(); renderBoard();
+    resetBtn.innerHTML = faceNeutral;
+  }
+  function buildEmptyGrid(){ grid = new Array(config.rows*config.cols).fill(0).map(()=>({mine:false, revealed:false, flagged:false, adjacent:0})); }
+  function idx(r,c){ return r*config.cols + c; }
+  function inBounds(r,c){ return r>=0 && c>=0 && r<config.rows && c<config.cols; }
+  function neighborsOfIndex(i){
+    const r = Math.floor(i/config.cols), c = i%config.cols; const out=[];
+    for(let dr=-1;dr<=1;dr++) for(let dc=-1;dc<=1;dc++){ if(dr===0&&dc===0) continue; const nr=r+dr,nc=c+dc; if(inBounds(nr,nc)) out.push(idx(nr,nc)); }
+    return out;
+  }
+
+  function placeMines(safeIndex){
+    let placed = 0; const total = config.rows*config.cols;
+    while(placed < config.mines){
+      const i = Math.floor(Math.random()*total);
+      if (i===safeIndex) continue;
+      if (grid[i].mine) continue;
+      const safeN = neighborsOfIndex(safeIndex);
+      if (safeN.includes(i)) continue;
+      grid[i].mine = true; placed++;
+    }
+    for(let r=0;r<config.rows;r++) for(let c=0;c<config.cols;c++){
+      const i = idx(r,c); if(grid[i].mine){ grid[i].adjacent = -1; continue; }
+      let count=0; for(const n of neighborsOfIndex(i)) if(grid[n].mine) count++; grid[i].adjacent = count;
+    }
+  }
+
+  function renderBoard(){
+    boardEl.innerHTML='';
+    boardEl.style.gridTemplateColumns = `repeat(${config.cols}, var(--cell-size))`;
+    boardEl.style.gridTemplateRows = `repeat(${config.rows}, var(--cell-size))`;
+    for(let r=0;r<config.rows;r++){ for(let c=0;c<config.cols;c++){
+      const i = idx(r,c);
+      const cell = document.createElement('button');
+      cell.className='cell';
+      cell.setAttribute('data-index', i);
+      cell.setAttribute('data-r', r);
+      cell.setAttribute('data-c', c);
+
+      // Events
+      cell.addEventListener('click', onCellClick);
+      cell.addEventListener('contextmenu', onCellRightClick);
+
+      // HOLD-to-highlight support on revealed numbers:
+      cell.addEventListener('mousedown', (e)=>{
+        if(e.button !== 0) return; // only left-button hold
+        if(cell.classList.contains('revealed') && cell.dataset.num && parseInt(cell.dataset.num) > 0){
+          startHighlight(i);
+        }
+      });
+      cell.addEventListener('mouseup', ()=>{ stopHighlight(); });
+      cell.addEventListener('mouseleave', ()=>{ stopHighlight(); });
+
+      // Touch: long-press on a revealed number to highlight suspects
+      cell.addEventListener('touchstart', (ev)=>{
+        if(cell.classList.contains('revealed') && cell.dataset.num && parseInt(cell.dataset.num) > 0){
+          touchTimeout = setTimeout(()=> startHighlight(i), 200);
+        }
+      }, {passive:true});
+      cell.addEventListener('touchend', ()=>{ if(touchTimeout){ clearTimeout(touchTimeout); touchTimeout = null; } stopHighlight(); });
+
+      boardEl.appendChild(cell);
+    } }
+    // scale
+    requestAnimationFrame(()=>{
+      const maxH = window.innerHeight * 0.7;
+      const maxW = Math.min(600, window.innerWidth - 40);
+      const cellByH = Math.floor((maxH - 120) / config.rows);
+      const cellByW = Math.floor((maxW - 40) / config.cols);
+      const size = Math.max(16, Math.min(cellByH || 24, cellByW || 24, 28));
+      document.documentElement.style.setProperty('--cell-size', size + 'px');
+    });
+  }
+
+  function startHighlight(numberIndex){
+    if(gameOver) return;
+    highlightActive = true;
+    // find neighbors that are unrevealed and not flagged -> mark suspect
+    const neighbors = neighborsOfIndex(numberIndex);
+    neighbors.forEach(n => {
+      if(!grid[n].revealed && !grid[n].flagged){
+        const cell = boardEl.querySelector(`[data-index="${n}"]`);
+        if(cell) cell.classList.add('suspect');
+      }
+    });
+  }
+  function stopHighlight(){
+    if(!highlightActive) return;
+    highlightActive = false;
+    const suspects = boardEl.querySelectorAll('.suspect');
+    suspects.forEach(s => s.classList.remove('suspect'));
+  }
+
+  function revealAllMines(triggeredIndex){
+    for(let i=0;i<grid.length;i++){
+      if(grid[i].mine){
+        const cell = boardEl.querySelector(`[data-index="${i}"]`);
+        if(!cell.classList.contains('revealed')){
+          cell.classList.add('revealed');
+          cell.innerHTML = `<span class="mine">${mineSvg}</span>`;
+        }
+      }
+    }
+    if(triggeredIndex!=null){ const tr = boardEl.querySelector(`[data-index="${triggeredIndex}"]`); if(tr) tr.style.background='linear-gradient(#f9d6d6,#f2bcbc)'; }
+  }
+
+  function onCellClick(e){
+    if(gameOver) return;
+    const i = parseInt(this.dataset.index,10);
+    // if clicking on a revealed number AND highlightActive is true -> chord: reveal neighbors not flagged
+    if(this.classList.contains('revealed') && this.dataset.num && parseInt(this.dataset.num)>0 && !firstClick){
+      // chord behavior: if count of flags around equals the number, reveal others
+      const neighbors = neighborsOfIndex(i);
+      const flaggedCount = neighbors.reduce((acc,n)=> acc + (grid[n].flagged?1:0), 0);
+      if(flaggedCount === parseInt(this.dataset.num)){
+        neighbors.forEach(n => { if(!grid[n].flagged && !grid[n].revealed) revealCell(n); });
+        checkWin();
+        return;
+      }
+    }
+
+    if(grid[i].flagged || grid[i].revealed) return;
+    if(firstClick){ placeMines(i); startTimer(); firstClick=false; }
+    revealCell(i); checkWin();
+  }
+
+  function onCellRightClick(e){
+    e.preventDefault();
+    if(gameOver) return;
+    const i = parseInt(this.dataset.index,10);
+    toggleFlag(i);
+    return false;
+  }
+
+  function toggleFlag(i){
+    if(grid[i].revealed) return;
+    grid[i].flagged = !grid[i].flagged;
+    const cell = boardEl.querySelector(`[data-index="${i}"]`);
+    if(grid[i].flagged){ cell.innerHTML = `<span class="flag">${flagSvg}</span>`; remainingFlags--; }
+    else { cell.innerHTML = ''; remainingFlags++; }
+    updateMineCount();
+  }
+
+  function revealCell(i){
+    if(grid[i].revealed || grid[i].flagged) return;
+    grid[i].revealed = true;
+    const cell = boardEl.querySelector(`[data-index="${i}"]`);
+    cell.classList.add('revealed');
+    if(grid[i].mine){
+      cell.innerHTML = `<span class="mine">${mineSvg}</span>`;
+      gameOver = true; clearInterval(interval); revealAllMines(i); resetBtn.innerHTML = faceDead;
+      setTimeout(()=>alert('Boom! You hit a mine.'),50);
+      return;
+    }
+    if(grid[i].adjacent > 0){
+      cell.setAttribute('data-num', grid[i].adjacent);
+      cell.textContent = grid[i].adjacent;
+      return;
+    }
+    const queue=[i];
+    while(queue.length){
+      const cur = queue.shift();
+      for(const n of neighborsOfIndex(cur)){
+        if(!grid[n].revealed && !grid[n].flagged){
+          grid[n].revealed = true;
+          const nc = boardEl.querySelector(`[data-index="${n}"]`);
+          nc.classList.add('revealed');
+          if(grid[n].adjacent > 0){ nc.setAttribute('data-num', grid[n].adjacent); nc.textContent = grid[n].adjacent; }
+          else { queue.push(n); }
+        }
+      }
+    }
+  }
+
+  function checkWin(){
+    let unrevealed = 0;
+    for(let i=0;i<grid.length;i++) if(!grid[i].revealed) unrevealed++;
+    if(unrevealed === config.mines){
+      gameOver = true; clearInterval(interval); resetBtn.innerHTML = faceWin;
+      for(let i=0;i<grid.length;i++) if(grid[i].mine){ const c = boardEl.querySelector(`[data-index="${i}"]`); c.innerHTML = `<span class="flag">${flagSvg}</span>`; }
+      setTimeout(()=>alert('Congratulations — You won!'),80);
+    }
+  }
+
+  function startTimer(){ if(interval) return; interval = setInterval(()=>{ seconds++; updateTimer(); }, 1000); }
+  function updateTimer(){ timerEl.textContent = String(seconds).padStart(3,'0'); }
+  function updateMineCount(){ mineCountEl.textContent = String(Math.max(0, remainingFlags)).padStart(3,'0'); }
+
+  resetBtn.addEventListener('click', ()=>{ applyConfig(); });
+  document.addEventListener('keydown', (e)=>{ if(e.key==='F2') applyConfig(); });
+
+  applyConfig();
+  window.addEventListener('resize', ()=>{ renderBoard(); });
+
+})();
+</script>
+
+<script src='https://www.noupe.com/embed/019a0842301d750688aaebdebe2174cb814a.js'></script>
