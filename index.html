@@ -79,11 +79,11 @@
 
 <script>
 /* === CONFIG: your JSONBin values === */
-const BIN_URL = 'https://api.jsonbin.io/v3/b/68fa2ceaae596e708f265dea';
-const MASTER_KEY = '$2a$10$QHMKtDYx4ET5TsrwoKU/q.B4no2XgvNLQlQoQE7NQyVgwFUIhpzK2'; // secret write key - keep safe
+const BIN_ID = '68fa751343b1c97be97b49b7';
+const BIN_URL_BASE = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
+const MASTER_KEY = '$2a$10$QHMKtDYx4ET5TsrwoKU/q.B4no2XgvNLQlQoQE7NQyVgwFUIhpzK2'; // keep private
 
-/* === simple Minesweeper implementation (classic behavior) === */
-
+/* === GAME SETUP === */
 const DIFFS = {
   beginner: {rows:9, cols:9, mines:10, label:'Beginner'},
   intermediate: {rows:16, cols:16, mines:40, label:'Intermediate'},
@@ -106,7 +106,6 @@ const difficultySel = document.getElementById('difficulty');
 const leaderboardEl = document.getElementById('leaderboard');
 const lbModeEl = document.getElementById('lbMode');
 
-function lbKey(diff){ return 'ms_leaderboard_' + diff; }
 const myNameKey = 'ms_myname';
 
 function updateCounters(){ mineCountEl.textContent = String(Math.max(0, remainingFlags)).padStart(3,'0'); timerEl.textContent = String(seconds).padStart(3,'0'); }
@@ -118,7 +117,7 @@ function applyDiff(diff){
   updateCounters();
   buildGrid();
   renderBoard();
-  renderLeaderboardLocal(); // render local placeholder until remote fetched
+  renderLeaderboardLocal();
   refreshGlobalLeaderboard();
 }
 
@@ -211,37 +210,37 @@ function toggleFlag(i){
 }
 
 function reveal(i){
-    if(grid[i].revealed || grid[i].flagged) return;
-    grid[i].revealed = true;
-    const btn = boardEl.querySelector(`[data-index="${i}"]`);
-    btn.classList.add('revealed');
-    if(grid[i].mine){
-      btn.innerHTML = '<span class="mine">💣</span>';
-      gameOver = true; clearInterval(interval);
-      for(let k=0;k<grid.length;k++) if(grid[k].mine && !grid[k].revealed){
-        const b = boardEl.querySelector(`[data-index="${k}"]`);
-        if(b){ b.classList.add('revealed'); b.innerHTML = '<span class="mine">💣</span>'; }
-      }
-      setTimeout(()=>{ alert('Boom! You hit a mine.'); }, 50);
-      return;
+  if(grid[i].revealed || grid[i].flagged) return;
+  grid[i].revealed = true;
+  const btn = boardEl.querySelector(`[data-index="${i}"]`);
+  btn.classList.add('revealed');
+  if(grid[i].mine){
+    btn.innerHTML = '<span class="mine">💣</span>';
+    gameOver = true; clearInterval(interval);
+    for(let k=0;k<grid.length;k++) if(grid[k].mine && !grid[k].revealed){
+      const b = boardEl.querySelector(`[data-index="${k}"]`);
+      if(b){ b.classList.add('revealed'); b.innerHTML = '<span class="mine">💣</span>'; }
     }
-    if(grid[i].adjacent > 0){
-      btn.dataset.num = grid[i].adjacent;
-      btn.textContent = grid[i].adjacent;
-      return;
-    }
-    const q=[i];
-    while(q.length){
-      const cur = q.shift();
-      for(const n of neighbors(cur)){
-        if(!grid[n].revealed && !grid[n].flagged){
-          grid[n].revealed = true;
-          const b = boardEl.querySelector(`[data-index="${n}"]`);
-          if(b){ b.classList.add('revealed'); if(grid[n].adjacent>0){ b.dataset.num = grid[n].adjacent; b.textContent = grid[n].adjacent; } else { q.push(n); } }
-        }
+    setTimeout(()=>{ alert('Boom! You hit a mine.'); }, 50);
+    return;
+  }
+  if(grid[i].adjacent > 0){
+    btn.dataset.num = grid[i].adjacent;
+    btn.textContent = grid[i].adjacent;
+    return;
+  }
+  const q=[i];
+  while(q.length){
+    const cur = q.shift();
+    for(const n of neighbors(cur)){
+      if(!grid[n].revealed && !grid[n].flagged){
+        grid[n].revealed = true;
+        const b = boardEl.querySelector(`[data-index="${n}"]`);
+        if(b){ b.classList.add('revealed'); if(grid[n].adjacent>0){ b.dataset.num = grid[n].adjacent; b.textContent = grid[n].adjacent; } else { q.push(n); } }
       }
     }
   }
+}
 
 function checkWin(){
   let unrevealed = 0;
@@ -259,43 +258,58 @@ function checkWin(){
 
 function startTimer(){ if(interval) return; interval = setInterval(()=>{ seconds++; updateCounters(); }, 1000); }
 
-/* === JSONBin integration === */
+/* === JSONBin helpers === */
 
+// Try to fetch without key first (public), fallback to using master key if 401
 async function fetchGlobalLeaderboard(){
-  const resp = await fetch(BIN_URL, { method: 'GET', headers: { 'Content-Type': 'application/json' } });
-  if(!resp.ok) throw new Error('Failed to fetch leaderboard: ' + resp.status);
-  const body = await resp.json();
-  return body.record ? body.record : body;
+  const url = BIN_URL_BASE + '/latest';
+  try {
+    let resp = await fetch(url);
+    if (resp.status === 401 || resp.status === 403) {
+      // try with key
+      resp = await fetch(url, { headers: { 'X-Master-Key': MASTER_KEY } });
+    }
+    if(!resp.ok) throw new Error('Failed to fetch: '+resp.status);
+    const body = await resp.json();
+    return body.record ? body.record : body;
+  } catch (err) {
+    console.error('fetchGlobalLeaderboard error', err);
+    return { beginner: [], intermediate: [], expert: [] };
+  }
 }
 
-async function putGlobalLeaderboard(newObj){
-  const resp = await fetch(BIN_URL, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Master-Key': MASTER_KEY
-    },
-    body: JSON.stringify(newObj)
-  });
-  if(!resp.ok){
-    const txt = await resp.text();
-    throw new Error('Failed to update leaderboard: ' + resp.status + ' ' + txt);
+// PUT updated object back (requires master key)
+async function putGlobalLeaderboard(obj){
+  try {
+    const url = BIN_URL_BASE;
+    const resp = await fetch(url, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Master-Key': MASTER_KEY
+      },
+      body: JSON.stringify(obj)
+    });
+    if(!resp.ok){
+      const txt = await resp.text();
+      throw new Error('Failed to update: '+resp.status+' '+txt);
+    }
+    return await resp.json();
+  } catch(err){
+    console.error('putGlobalLeaderboard error', err);
+    throw err;
   }
-  const data = await resp.json();
-  return data;
 }
 
 async function refreshGlobalLeaderboard(){
   try{
     const obj = await fetchGlobalLeaderboard();
-    // ensure structure exists
     obj.beginner = obj.beginner || [];
     obj.intermediate = obj.intermediate || [];
     obj.expert = obj.expert || [];
     renderLeaderboardFromObject(obj);
   }catch(err){
     console.error(err);
-    // fallback: show local
     renderLeaderboardLocal();
   }
 }
@@ -322,28 +336,27 @@ function renderLeaderboardLocal(){
   const li = document.createElement('li'); li.className='lb-item'; li.textContent = 'Loading...'; leaderboardEl.innerHTML=''; leaderboardEl.appendChild(li);
 }
 
-/* === Win flow: prompt for name or use saved name, then update global bin === */
+/* === Win flow === */
 
 async function onWinFlow(){
   const saved = localStorage.getItem(myNameKey);
   const diffKey = difficultySel.value;
   try{
     if(saved){
-      // try to increment or create if missing
+      // use saved name: fetch remote and update (add or increment)
       const obj = await fetchGlobalLeaderboard();
       const arr = obj[diffKey] || [];
       const idx = arr.findIndex(e => e.name.toLowerCase() === saved.toLowerCase());
       if(idx === -1){
-        // not present remotely - attempt to create with saved casing if name unused
+        // name not present remotely, ensure not used
         const conflict = arr.some(e => e.name.toLowerCase() === saved.toLowerCase());
         if(conflict){
           alert('Name already used! Please choose a different name.');
-          promptAndRecord(diffKey);
+          await promptAndRecord(diffKey);
           return;
         }
         arr.push({name: saved, wins: 1});
       } else {
-        // increment existing entry (no owner verification with this simple method)
         arr[idx].wins = (arr[idx].wins || 0) + 1;
       }
       obj[diffKey] = arr;
@@ -352,7 +365,6 @@ async function onWinFlow(){
       await refreshGlobalLeaderboard();
       return;
     } else {
-      // prompt flow
       await promptAndRecord(diffKey);
     }
   }catch(err){
@@ -368,7 +380,6 @@ async function promptAndRecord(diffKey){
     const trimmed = name.trim();
     if(!/^[A-Za-z0-9]{1,10}$/.test(trimmed)){ alert('Invalid name. Use 1-10 letters or digits.'); continue; }
     try{
-      // load remote
       const obj = await fetchGlobalLeaderboard();
       const arr = obj[diffKey] || [];
       if(arr.some(e => e.name.toLowerCase() === trimmed.toLowerCase())){
@@ -389,7 +400,7 @@ async function promptAndRecord(diffKey){
   }
 }
 
-/* === Leaderboard auto-refresh on difficulty change and init === */
+/* === events and init === */
 difficultySel.addEventListener('change', ()=>{ applyDiff(difficultySel.value); });
 resetBtn.addEventListener('click', ()=>{ applyDiff(difficultySel.value); });
 
